@@ -180,6 +180,10 @@ ul
 
 <p class=MsoNormal>&nbsp;</p>
 
+<p class=MsoNormal><i>For public repository:</i> Zebrafish_social_behavior_analysis_June2026</p>
+
+<p class=MsoNormal>&nbsp;</p>
+
 <h1>Contents</h1>
 
 <p class=MsoListParagraphCxSpFirst style='text-indent:-.25in'><span
@@ -280,19 +284,6 @@ identify behaviors and then my (major) modifications. See notes, especially May
 all the code! Correcting errors; 7x speedup; etc. Begun May, 2023. See “<a
 name="_Hlk136177364">Behavior Code Revisions May 2023</a>” … “… November 2023” documents.
 Lots of additional revisions and features for the next 3 years. </p>
-
-<p class=MsoNormal>&nbsp;</p>
-
-<h1>Python code locations</h1>
-
-<p class=MsoNormal>In progress versions (local) in <span style='font-size:11.0pt;
-line-height:107%;font-family:"Courier New"'>\Zebrafish behavior\Code_current</span></p>
-
-<p class=MsoNormal>Stable versions in <span style='font-size:11.0pt;line-height:
-107%;font-family:"Courier New"'>\GitHub\Social-Behavior\BehaviorAnalysis</span></p>
-
-<p class=MsoNormal>Documentation (a copy of this document) in <span
-style='font-size:11.0pt;line-height:107%;font-family:"Courier New"'>\GitHub\Social-Behavior</span></p>
 
 <p class=MsoNormal>&nbsp;</p>
 
@@ -2391,9 +2382,9 @@ loaded.</p>
 font-family:"Courier New"'>CSVcolumns</span> is not loaded, can load with:</p>
 
 <p class=MsoNormal style='margin-left:.5in'><span style='font-size:11.0pt;
-line-height:107%;font-family:"Courier New"'>basePath = r'C:\Users\raghu\Documents\Experiments
-and Projects\Zebrafish behavior\CSV files and outputs\2 week old - pairs
-TestSubset'</span></p>
+line-height:107%;font-family:"Courier New"'>basePath =
+r'C:\Users\raghu\Documents\Experiments and Projects\Zebrafish behavior\CSV
+files and outputs\2 week old - pairs TestSubset'</span></p>
 
 <p class=MsoNormal style='margin-left:.5in'><span style='font-size:11.0pt;
 line-height:107%;font-family:"Courier New"'>CSVinfo_file = 'CSVcolumns.yaml'</span></p>
@@ -3028,9 +3019,8 @@ fps = fps, plotShadedUnc = True)</span></p>
 <p class=MsoNormal>For the correlation temporal asymmetry:</p>
 
 <p class=MsoNormal><span style='font-size:10.0pt;line-height:107%;font-family:
-"Courier New"'>corr_asymm = calc_corr_asymm(behav_corr_allSets['DeltaCorr'],
-behavior_key_list_subset, binCenters, maxFrameDelay = None, normalization =
-'none')</span></p>
+"Courier New"'>corr_asymm = calc_corr_asymm(behav_corr_allSets['DeltaCorr'], behavior_key_list_subset,
+binCenters, maxFrameDelay = None, normalization = 'none')</span></p>
 
 <p class=MsoNormal><span style='font-size:10.0pt;line-height:107%;font-family:
 "Courier New"'>plot_corr_asymm(corr_asymm, crange=None, titleString = r'$\Delta$P')</span></p>
@@ -3139,10 +3129,9 @@ all items in input x_list. Can also plot the probability distribution for each
 array in x_list (semi-transparent) and plot the uncertainty in the concatenated
 probability distribution (semi-transparent). Can also output the concatenated
 probability distribution. Can multiply “x” by a scale factor, e.g. to convert
-radians to degrees.  Can plot in polar coordinates – useful for angle
-distributions. Typically use this with the output of <span style='font-size:
-11.0pt;line-height:107%;font-family:"Courier New"'>combine_all_values_constrained()</span>
-.  </p>
+radians to degrees.  Can plot in polar coordinates – useful for angle distributions.
+Typically use this with the output of <span style='font-size:11.0pt;line-height:
+107%;font-family:"Courier New"'>combine_all_values_constrained()</span> .  </p>
 
 <p class=MsoNormal>Normalization: to normalize by 1/r (i.e. so p(r) is a proper
 probability distribution that accounts for 2D disk geometry), make condition <span
