@@ -142,7 +142,191 @@ def get_basic_two_fish_characterizations(all_position_data, datasets, CSVcolumns
     return datasets
 
     
-def get_interfish_distance(position_data, CSVcolumns, image_scale, 
+def _circular_mean_std(angles):
+    """
+    Circular mean and circular standard deviation of a 1D array of angles (rad).
+
+    Returns
+    -------
+    mean : circular mean, in (-pi, pi]
+    std  : circular standard deviation (>= 0), sqrt(-2 ln R), R = resultant length
+    """
+    sin_m = np.mean(np.sin(angles))
+    cos_m = np.mean(np.cos(angles))
+    mean = np.arctan2(sin_m, cos_m)
+    R = np.sqrt(sin_m**2 + cos_m**2)
+    # Circular std is undefined for R==0; clip to avoid log(0)
+    std = np.sqrt(-2.0 * np.log(np.clip(R, 1e-12, 1.0)))
+    return mean, std
+
+
+def get_IBI_properties(datasets):
+    """
+    For each dataset and fish, identify inter-bout intervals (IBIs; sequences of
+    frames for which isActive == False) and compute per-IBI properties, stored
+    in datasets[j]["IBI_properties"].
+
+    For each fish, considers IBIs from the second through the second-to-last
+    (so that the "next IBI", used for turning_angle_IBI and Delta_t_s, always
+    exists). A fish with fewer than 3 IBIs contributes empty arrays.
+
+    Bad tracking frames are excluded from all per-IBI means and standard
+    deviations (but are counted in IB_duration_s). Angular quantities use
+    circular means / standard deviations; the heading-angle difference used for
+    turning_angle_IBI is wrapped to [-pi, pi].
+
+    datasets[j]["IBI_properties"] is a dict whose values are length-Nfish lists
+    of 1D numpy arrays (one array per fish; lengths differ between fish because
+    each fish has its own IBIs). Sub-keys:
+        "IB_duration_s"   : IBI duration, s (includes bad frames)
+        "Delta_t_s"       : duration of the bout between this IBI and the next, s
+        "start_frame"     : first frame number of the IBI (int)
+        "r_mm_mean", "r_mm_std"   : mean / std radial position over the IBI (mm)
+        "gamma_mean", "gamma_std" : circular mean / std polar angle (rad)
+        "heading_angle_mean"      : circular mean heading angle (rad)
+        "turning_angle_IBI"       : -wrap(heading_angle_mean[next]
+                                          - heading_angle_mean[this]), in [-pi, pi]
+      Nfish==2 only (per fish, using that fish's own IBI frames):
+        "head_head_distance_mm_mean" : mean head-head distance over the IBI (mm)
+        "closest_distance_mm_mean"   : mean closest distance over the IBI (mm)
+        "relative_orientation_mean"  : circular mean of that fish's relative
+                                       orientation over the IBI (rad)
+
+    Inputs
+    ------
+    datasets : list of dataset dictionaries. Each must contain
+        "isActive_Fish{k}" (with "combine_frames"), "radial_position_mm",
+        "polar_angle_rad", "heading_angle", "bad_bodyTrack_frames",
+        "frameArray", "fps", "Nfish"; and for Nfish==2 also
+        "head_head_distance_mm", "closest_distance_mm", "relative_orientation".
+
+    Returns
+    -------
+    datasets : same list, with a new "IBI_properties" key in each dataset.
+    """
+    print('Calculating inter-bout-interval (IBI) properties.')
+    for dataset in datasets:
+        fps = dataset["fps"]
+        Nfish = dataset["Nfish"]
+        frameArray = np.array(dataset["frameArray"]).astype(int)
+        frame_start = int(frameArray.min())
+        frame_end = int(frameArray.max())
+        idx_offset = frame_start
+        bad_frames = set(np.array(
+            dataset["bad_bodyTrack_frames"]["raw_frames"]).astype(int))
+
+        r_mm = dataset["radial_position_mm"]    # Nframes x Nfish
+        gamma = dataset["polar_angle_rad"]       # Nframes x Nfish
+        heading = dataset["heading_angle"]       # Nframes x Nfish
+
+        twoFish = (Nfish == 2)
+        if twoFish:
+            hh_dist = dataset["head_head_distance_mm"]     # Nframes
+            closest_dist = dataset["closest_distance_mm"]  # Nframes
+            rel_orient = dataset["relative_orientation"]   # Nframes x 2
+
+        single_keys = ["IB_duration_s", "Delta_t_s", "start_frame",
+                       "r_mm_mean", "r_mm_std", "gamma_mean", "gamma_std",
+                       "heading_angle_mean", "turning_angle_IBI"]
+        pair_keys = ["head_head_distance_mm_mean", "closest_distance_mm_mean",
+                     "relative_orientation_mean"]
+        all_keys = single_keys + (pair_keys if twoFish else [])
+
+        # Each sub-key is a length-Nfish list of 1D arrays
+        IBI_properties = {key: [None] * Nfish for key in all_keys}
+
+        for k in range(Nfish):
+            frame_info = dataset[f"isActive_Fish{k}"]["combine_frames"]
+
+            # Build IBIs (inactive spans) as (start_frame, end_frame)
+            ibis = []
+            if frame_info.shape[1] > 0:
+                bout_starts = frame_info[0, :].astype(int)
+                bout_durations = frame_info[1, :].astype(int)
+                bout_ends = bout_starts + bout_durations - 1
+                if bout_starts[0] > frame_start:
+                    ibis.append((frame_start, bout_starts[0] - 1))
+                for i in range(len(bout_starts) - 1):
+                    ibi_start = bout_ends[i] + 1
+                    ibi_end = bout_starts[i + 1] - 1
+                    if ibi_start <= ibi_end:
+                        ibis.append((ibi_start, ibi_end))
+                if bout_ends[-1] < frame_end:
+                    ibis.append((bout_ends[-1] + 1, frame_end))
+
+            N_ibis = len(ibis)
+
+            # Per-IBI quantities for ALL IBIs (NaN where no valid frames)
+            r_means = np.full(N_ibis, np.nan)
+            r_stds = np.full(N_ibis, np.nan)
+            gamma_means = np.full(N_ibis, np.nan)
+            gamma_stds = np.full(N_ibis, np.nan)
+            heading_means = np.full(N_ibis, np.nan)
+            ibi_durations_s = np.zeros(N_ibis)
+            ibi_start_frames = np.zeros(N_ibis, dtype=int)
+            if twoFish:
+                hh_means = np.full(N_ibis, np.nan)
+                cd_means = np.full(N_ibis, np.nan)
+                ro_means = np.full(N_ibis, np.nan)
+
+            for idx_i, (ibi_start, ibi_end) in enumerate(ibis):
+                ibi_frames = np.arange(ibi_start, ibi_end + 1, dtype=int)
+                ibi_durations_s[idx_i] = len(ibi_frames) / fps
+                ibi_start_frames[idx_i] = ibi_start
+
+                # Exclude bad tracking frames for means/stds
+                good_frames = ibi_frames[~np.isin(ibi_frames, list(bad_frames))]
+                if len(good_frames) == 0:
+                    continue
+                good_idx = good_frames - idx_offset
+
+                r_means[idx_i] = np.mean(r_mm[good_idx, k])
+                r_stds[idx_i] = np.std(r_mm[good_idx, k])
+                gamma_means[idx_i], gamma_stds[idx_i] = \
+                    _circular_mean_std(gamma[good_idx, k])
+                heading_means[idx_i], _ = _circular_mean_std(heading[good_idx, k])
+                if twoFish:
+                    hh_means[idx_i] = np.mean(hh_dist[good_idx])
+                    cd_means[idx_i] = np.mean(closest_dist[good_idx])
+                    ro_means[idx_i], _ = _circular_mean_std(rel_orient[good_idx, k])
+
+            # Output IBIs: second through second-to-last (need >= 3 IBIs)
+            if N_ibis >= 3:
+                out_idx = np.arange(1, N_ibis - 1)
+            else:
+                out_idx = np.array([], dtype=int)
+
+            if len(out_idx) > 0:
+                # turning_angle_IBI = -wrap(heading_mean[next] - heading_mean[this])
+                raw = heading_means[out_idx + 1] - heading_means[out_idx]
+                turning = -1.0 * ((raw + np.pi) % (2.0 * np.pi) - np.pi)
+                # Delta_t_s: bout duration between IBI out_idx and out_idx+1
+                delta_t = np.array(
+                    [(ibis[i + 1][0] - (ibis[i][1] + 1)) / fps for i in out_idx])
+            else:
+                turning = np.array([])
+                delta_t = np.array([])
+
+            IBI_properties["IB_duration_s"][k] = ibi_durations_s[out_idx]
+            IBI_properties["Delta_t_s"][k] = delta_t
+            IBI_properties["start_frame"][k] = ibi_start_frames[out_idx]
+            IBI_properties["r_mm_mean"][k] = r_means[out_idx]
+            IBI_properties["r_mm_std"][k] = r_stds[out_idx]
+            IBI_properties["gamma_mean"][k] = gamma_means[out_idx]
+            IBI_properties["gamma_std"][k] = gamma_stds[out_idx]
+            IBI_properties["heading_angle_mean"][k] = heading_means[out_idx]
+            IBI_properties["turning_angle_IBI"][k] = turning
+            if twoFish:
+                IBI_properties["head_head_distance_mm_mean"][k] = hh_means[out_idx]
+                IBI_properties["closest_distance_mm_mean"][k] = cd_means[out_idx]
+                IBI_properties["relative_orientation_mean"][k] = ro_means[out_idx]
+
+        dataset["IBI_properties"] = IBI_properties
+
+    return datasets
+
+
+def get_interfish_distance(position_data, CSVcolumns, image_scale,
                            body_column_offset = 0):
     """
     Get the inter-fish distance (calculated both as the distance 

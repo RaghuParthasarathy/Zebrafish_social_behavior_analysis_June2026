@@ -27,7 +27,8 @@ from IO_toolkit import get_basePath, get_loading_option, load_and_assign_from_pi
 from behavior_identification_single import get_single_fish_characterizations, \
         get_coord_characterizations, get_fish_lengths
 from behavior_identification import extract_pair_behaviors, \
-    get_basic_two_fish_characterizations, make_rel_orient_rank_key
+    get_basic_two_fish_characterizations, make_rel_orient_rank_key, \
+    get_IBI_properties
 
 
 # ---------------------------------------------------------------------------
@@ -272,9 +273,14 @@ def main():
     # For each dataset, perform “basic” two-fish characterizations 
     # such as inter-fish distance, if Nfish > 1. 
     if Nfish==2:
-        datasets = get_basic_two_fish_characterizations(all_position_data, datasets, 
+        datasets = get_basic_two_fish_characterizations(all_position_data, datasets,
                                                      CSVcolumns, expt_config, params)
-    
+
+    # For each dataset, compute inter-bout-interval (IBI) properties
+    # (per-fish IBI means of position, heading, turning angle; pair quantities
+    # if Nfish==2). Stored in datasets[j]["IBI_properties"].
+    datasets = get_IBI_properties(datasets)
+
     # For each dataset, identify social behaviors
     if Nfish > 1:
         behavior_keys = ['perp_noneSee', 'perp_oneSees', 

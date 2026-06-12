@@ -3251,11 +3251,17 @@ def revise_datasets(keys_to_modify=["relative_orientation"],
           behaviors, e.g. to use different ranges.
       - "angular_speed_rad_s_mean" : mean angular speed averaged over both fish,
           e.g. to revise after this property started to be calculated
-      - "turning_angle_rad" : change in turning angle (-1.0 * change in 
+      - "turning_angle_rad" : change in turning angle (-1.0 * change in
           heading angle (rad)) for each fish,
           e.g. to revise after this property started to be calculated
       - "angular_speed_array_rad_s" : angular speed,
           correcting an offset error (minor)
+      - "IBI_properties" : per-fish inter-bout-interval properties via
+          get_IBI_properties(); e.g. to add this key to existing pickle files
+          without re-analyzing the CSVs. Requires the standard pipeline keys
+          (isActive_Fish{k}, radial_position_mm, polar_angle_rad, heading_angle,
+          and, for Nfish==2, head_head_distance_mm / closest_distance_mm /
+          relative_orientation) to already be present in the loaded datasets.
     
     Parameters
     ----------
@@ -3295,7 +3301,8 @@ def revise_datasets(keys_to_modify=["relative_orientation"],
     """
     
     # Import here to avoid circular import
-    from behavior_identification import recalculate_angles, get_maintain_proximity_frames
+    from behavior_identification import recalculate_angles, get_maintain_proximity_frames, \
+        get_IBI_properties
     from behavior_identification_single import get_mean_speed, get_fish_delta_heading_angle
 
     print("\n" + "="*70)
@@ -3360,6 +3367,11 @@ def revise_datasets(keys_to_modify=["relative_orientation"],
         for j in range(N_datasets):
             datasets[j]["turning_angle_rad"] = \
                 -1.0*get_fish_delta_heading_angle(datasets[j], frame_diff = (-1, 1))
+
+    # re-calculate inter-bout-interval (IBI) properties (per-fish IBI means of
+    # position, heading, turning angle; pair quantities if Nfish==2):
+    if "IBI_properties" in keys_to_modify:
+        datasets = get_IBI_properties(datasets)
 
     # Recalculate other behaviors; need to specify and write code for each
     for prox_num in (1, 2):

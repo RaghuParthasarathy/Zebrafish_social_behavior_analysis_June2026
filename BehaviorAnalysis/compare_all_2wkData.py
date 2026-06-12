@@ -312,8 +312,9 @@ if __name__ == '__main__':
                                  makeSlicePlots = False)
             all_expts[exptName]["turn_2Dhist_mean"] = saved_pair_turning_outputs[0]
             all_expts[exptName]["turn_2Dhist_sem"] = saved_pair_turning_outputs[1]
-            all_expts[exptName]["turn_2Dhist_X"] = saved_pair_turning_outputs[2]
-            all_expts[exptName]["turn_2Dhist_Y"] = saved_pair_turning_outputs[3]   
+            all_expts[exptName]["turn_2Dhist_std"] = saved_pair_turning_outputs[2]
+            all_expts[exptName]["turn_2Dhist_X"] = saved_pair_turning_outputs[3]
+            all_expts[exptName]["turn_2Dhist_Y"] = saved_pair_turning_outputs[4]   
 
     #%% Make pair plots of behavior v distance
     # Only for Nfish ==2

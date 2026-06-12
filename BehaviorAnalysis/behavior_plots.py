@@ -551,7 +551,7 @@ def make_pair_fish_plots(datasets, exptName = '',
     xlabelStr = 'Head-Head Distance (mm)'
     ylabelStr = 'Relative Orientation (rad)'
     colorRange = (constraintRange[0], 40.0)
-    hist_speed, X, Y, hist_speed_sem = make_2D_histogram(
+    hist_speed, X, Y, hist_speed_sem, _ = make_2D_histogram(
         datasets,
         keyNames = keyNames, keyIdx = keyIdx, use_abs_value = use_abs_value,
         keyNameC = keyNameC, keyIdxC =keyIdxC, 
@@ -887,7 +887,7 @@ def make_bending_angle_plots(datasets, exptName = '', distance_type = None,
     use_abs_value = (False, False)
     titleStr = f'{exptName}: Bend Angle; unc. < {mask_by_sem_limit_degrees:.1f} deg'
     # Save the output 2D histograms, for use later.
-    bend_2Dhist_mean, X, Y, bend_2Dhist_sem = make_2D_histogram(
+    bend_2Dhist_mean, X, Y, bend_2Dhist_sem, _ = make_2D_histogram(
         datasets,
         keyNames = ('relative_orientation', f'{distance_type}_mm'),
         keyIdx = (None, None), 
@@ -1032,7 +1032,7 @@ def make_bending_angle_plots(datasets, exptName = '', distance_type = None,
         use_abs_value = (False, False)
         titleStr = f'{exptName}: Bend Angle >{bending_threshold_deg:.0f}deg; unc. < {mask_by_sem_limit_degrees:.1f}deg'
         # Save the output 2D histograms, for use later.
-        bend_2Dhist_mean, X, Y, bend_2Dhist_sem = make_2D_histogram(
+        bend_2Dhist_mean, X, Y, bend_2Dhist_sem, _ = make_2D_histogram(
             datasets,
             keyNames = ('relative_orientation', f'{distance_type}_mm'),
             keyIdx = (None, None), 
@@ -1063,8 +1063,10 @@ def make_turning_angle_plots(datasets, exptName = '', distance_type = None,
                              color = 'black',
                              plot_type_2D = 'heatmap',
                              Nbins = (19,15),
-                             cmap = 'RdYlBu_r', 
-                             outputFileNameBase = 'turning_angle', 
+                             mask_by_sem_limit_degrees = 2.0,
+                             colorRange = (-5.0*np.pi/180.0, 5.0*np.pi/180.0),
+                             cmap = 'RdYlBu_r',
+                             outputFileNameBase = 'turning_angle',
                              outputFileNameExt = 'png',
                              closeFigures = False,
                              outputCSVFileName = None,
@@ -1087,21 +1089,26 @@ def make_turning_angle_plots(datasets, exptName = '', distance_type = None,
                     Which plotting function make_2D_histogram() will use
                     ('heatmap' or 'line_plots')
         Nbins : tuple, Number of bins in the rel orientation and distance axes
+        mask_by_sem_limit_degrees : (float) only plot 2D-histogram bins whose
+            s.e.m. is below this value (degrees); also used in the title. 2.0 by default.
+        colorRange : (vmin, vmax) tuple for the heatmap color scale, in radians
+            (converted to degrees for display). Default +/- 5 degrees.
         cmap : colormap to use for heatmap
         outputFileNameBase : base file name for figure output; if None,
                              won't save a figure file
         outputFileNameExt : extension for figure output (e.g. 'eps' or 'png')
         closeFigures : (bool) if True, close a figure after creating it.
         outputCSVFileName : str or None ; send to make_2D_histogram(); if not None,
-            output the 2D histogram values as a CSV file. 
+            output the 2D histogram values as a CSV file.
         makeSlicePlots : (bool) if true, make plots that are "slices" of the 2D histogram
 
     Outputs:
         saved_pair_outputs : list, containing
             0 : turn_2Dhist_mean, mean 2D turning angle histogram
-            1 : turn_2Dhist_std, std dev for 2D turning angle histogram
-            2: bin positions ("X") for head_head_distance_mm for 2D turning angle histogram
-            3: bin positions ("Y") for relative orientation for 2D turning angle histogram
+            1 : turn_2Dhist_sem, standard error of the mean for 2D turning angle histogram
+            2 : turn_2Dhist_std, std dev for 2D turning angle histogram
+            3: bin positions ("X") for relative orientation for 2D turning angle histogram
+            4: bin positions ("Y") for head_head_distance_mm for 2D turning angle histogram
 
     To do:
         Redundant code for slicing, symmetrization. Probably not worth cleaning up.
@@ -1145,7 +1152,6 @@ def make_turning_angle_plots(datasets, exptName = '', distance_type = None,
     if verifyPairs==False:
         raise ValueError('Error in make_turning_angle_plots; Nfish must be 2 !')
 
-
     # 2D plot of mean turning angle vs. relative orientation and distance
     if outputFileNameBase is not None:
         outputFileName = outputFileNameBase + \
@@ -1153,19 +1159,18 @@ def make_turning_angle_plots(datasets, exptName = '', distance_type = None,
                 '.' + outputFileNameExt
     else:
         outputFileName = None
-    mask_by_sem_limit_degrees = 2.0 # show points with s.e.m. < this
     use_abs_value = (False, False)
     titleStr = f'{exptName}: Turn Angle; unc. < {mask_by_sem_limit_degrees:.1f} deg'
     # Save the output 2D histograms, for use later.
-    turn_2Dhist_mean, X, Y, turn_2Dhist_sem = make_2D_histogram(
+    turn_2Dhist_mean, X, Y, turn_2Dhist_sem, turn_2Dhist_std = make_2D_histogram(
         datasets,
         keyNames = ('relative_orientation', f'{distance_type}_mm'),
         keyIdx = (None, None), 
         use_abs_value = use_abs_value,
         keyNameC = 'turning_angle_rad', keyIdxC = None,
-        colorRange = (-2.5*np.pi/180.0, 2.5*np.pi/180.0),
-        dilate_minus1= False, 
-        bin_ranges = ((-np.pi, np.pi), (0.0, 50.0)), Nbins = Nbins, 
+        colorRange = colorRange,
+        dilate_minus1= False,
+        bin_ranges = ((-np.pi, np.pi), (0.0, 50.0)), Nbins = Nbins,
         titleStr = titleStr,
         clabelStr= 'Mean Turning Angle (degrees)',
         xlabelStr = 'Relative Orientation (degrees)',
@@ -1179,6 +1184,7 @@ def make_turning_angle_plots(datasets, exptName = '', distance_type = None,
         outputCSVFileName = outputCSVFileName)
     saved_pair_outputs.append(turn_2Dhist_mean)
     saved_pair_outputs.append(turn_2Dhist_sem)
+    saved_pair_outputs.append(turn_2Dhist_std)
     saved_pair_outputs.append(X)
     saved_pair_outputs.append(Y)
 
@@ -1307,7 +1313,7 @@ def make_turning_angle_plots(datasets, exptName = '', distance_type = None,
         use_abs_value = (False, False)
         titleStr = f'{exptName}: Turn Angle >{turning_threshold_deg:.0f}deg; unc. < {mask_by_sem_limit_degrees:.1f}deg'
         # Save the output 2D histograms, for use later.
-        turn_2Dhist_mean, X, Y, turn_2Dhist_sem = make_2D_histogram(
+        turn_2Dhist_mean, X, Y, turn_2Dhist_sem, _ = make_2D_histogram(
             datasets,
             keyNames = ('relative_orientation', f'{distance_type}_mm'),
             keyIdx = (None, None), 
@@ -1334,7 +1340,125 @@ def make_turning_angle_plots(datasets, exptName = '', distance_type = None,
     return saved_pair_outputs
 
 
-def make_relative_orientation_plots(datasets, exptName = '', 
+def make_interbout_turning_angle_plots(datasets, exptName = '',
+                                       distance_type = 'head_head_distance',
+                                       plot_type_2D = 'heatmap',
+                                       Nbins = (19, 15),
+                                       mask_by_sem_limit_degrees = 2.0,
+                                       colorRange = (-5.0*np.pi/180.0, 5.0*np.pi/180.0),
+                                       cmap = 'RdYlBu_r',
+                                       outputFileNameBase = 'IBI_turning_angle',
+                                       outputFileNameExt = 'png',
+                                       closeFigures = False,
+                                       outputCSVFileName = None):
+    """
+    Inter-bout-interval (IBI) analogue of make_turning_angle_plots().
+
+    Plots the mean IBI-to-IBI turning angle (datasets[j]["IBI_properties"]
+    ["turning_angle_IBI"]) binned by the IBI-level relative orientation and
+    inter-fish distance. Pools the per-IBI arrays across fish and datasets, then
+    bins/plots them via bin_and_plot_2D(). Requires Nfish==2 (uses the pair
+    sub-keys of IBI_properties). Non-finite IBI entries are dropped before
+    binning.
+
+    Inputs
+    ------
+    datasets : list of dataset dictionaries, each with an "IBI_properties" key
+               (from get_IBI_properties) containing the per-fish ragged arrays
+               "turning_angle_IBI", "relative_orientation_mean", and
+               "head_head_distance_mm_mean" / "closest_distance_mm_mean".
+    exptName : experiment name, appended to titles
+    distance_type : 'head_head_distance' or 'closest_distance'
+    plot_type_2D : 'heatmap' or 'line_plots'
+    Nbins : (n_relorient_bins, n_distance_bins)
+    mask_by_sem_limit_degrees : only plot bins whose s.e.m. is below this value
+                        (degrees); also used in the title. 2.0 by default.
+    colorRange : (vmin, vmax) tuple for the heatmap color scale, in radians
+                        (converted to degrees for display). Default +/- 5 degrees.
+    cmap : colormap for the heatmap
+    outputFileNameBase : base figure filename; None to skip saving
+    outputFileNameExt : figure file extension (e.g. 'png', 'svg')
+    closeFigures : if True, close the figure after creating it
+    outputCSVFileName : if not None, write the 2D mean (and parallel '_unc'
+                        s.e.m.) to CSV via bin_and_plot_2D()
+
+    Outputs
+    -------
+    saved_pair_outputs : list, containing (matching make_turning_angle_plots)
+        0 : turn_2Dhist_mean, mean IBI 2D turning-angle histogram
+        1 : turn_2Dhist_sem, standard error of the mean in each bin
+        2 : turn_2Dhist_std, standard deviation in each bin
+        3 : X, bin-center positions for relative orientation (meshgrid)
+        4 : Y, bin-center positions for distance (meshgrid)
+    """
+    # Require Nfish==2 (the pair sub-keys exist only then)
+    for j in range(len(datasets)):
+        if datasets[j]["Nfish"] != 2:
+            raise ValueError('Error in make_interbout_turning_angle_plots; '
+                             'Nfish must be 2 !')
+
+    if distance_type == 'closest_distance':
+        distance_file_string = 'closestDistance'
+        distanceLabelStr = 'Closest Distance (mm)'
+    elif distance_type == 'head_head_distance':
+        distance_file_string = 'headHeadDistance'
+        distanceLabelStr = 'Head-Head Distance (mm)'
+    else:
+        raise ValueError('Invalid distance type')
+    distance_key = f'{distance_type}_mm_mean'
+
+    # Pool the per-IBI arrays across fish and datasets into flat 1D arrays
+    turning_all = []
+    rel_orient_all = []
+    distance_all = []
+    for dataset in datasets:
+        ibi = dataset["IBI_properties"]
+        for k in range(dataset["Nfish"]):
+            turning_all.append(ibi["turning_angle_IBI"][k])
+            rel_orient_all.append(ibi["relative_orientation_mean"][k])
+            distance_all.append(ibi[distance_key][k])
+    turning_all = np.concatenate(turning_all)
+    rel_orient_all = np.concatenate(rel_orient_all)
+    distance_all = np.concatenate(distance_all)
+
+    # Drop any non-finite entries (e.g. an IBI with no good frames)
+    finite = (np.isfinite(turning_all) & np.isfinite(rel_orient_all)
+              & np.isfinite(distance_all))
+    turning_all = turning_all[finite]
+    rel_orient_all = rel_orient_all[finite]
+    distance_all = distance_all[finite]
+
+    # 2D plot of mean IBI turning angle vs. relative orientation and distance
+    if outputFileNameBase is not None:
+        outputFileName = outputFileNameBase + \
+            f'_IBIturnAngle_{distance_file_string}_orientation_2D' + \
+            '.' + outputFileNameExt
+    else:
+        outputFileName = None
+    titleStr = f'{exptName}: IBI Turn Angle; unc. < {mask_by_sem_limit_degrees:.1f} deg'
+
+    turn_2Dhist_mean, X, Y, turn_2Dhist_sem, turn_2Dhist_std = bin_and_plot_2D(
+        rel_orient_all, distance_all, valuesC_all=turning_all,
+        bin_ranges=((-np.pi, np.pi), (0.0, 50.0)), Nbins=Nbins,
+        titleStr=titleStr,
+        clabelStr='Mean IBI Turning Angle (degrees)',
+        xlabelStr='Relative Orientation (degrees)',
+        ylabelStr=distanceLabelStr,
+        colorRange=colorRange,
+        unit_scaling_for_plot=[180.0/np.pi, 1.0, 180.0/np.pi],
+        mask_by_sem_limit=mask_by_sem_limit_degrees*np.pi/180.0,
+        cmap=cmap,
+        plot_type=plot_type_2D,
+        outputFileName=outputFileName,
+        outputCSVFileName=outputCSVFileName,
+        closeFigure=closeFigures)
+
+    saved_pair_outputs = [turn_2Dhist_mean, turn_2Dhist_sem, turn_2Dhist_std,
+                          X, Y]
+    return saved_pair_outputs
+
+
+def make_relative_orientation_plots(datasets, exptName = '',
                                     distance_type = None,
                              color = 'black',
                              plot_type_2D = 'heatmap',
@@ -1372,7 +1496,7 @@ def make_relative_orientation_plots(datasets, exptName = '',
     Outputs:
         saved_pair_outputs : list, containing
             0 : relOrient_2Dhist_mean, mean 2D relative orientation histogram
-            1 : relOrient_2Dhist_std, std dev for 2D relative orientation histogram
+            1 : relOrient_2Dhist_sem, s.e.m. for 2D relative orientation histogram
             2: bin positions ("X") for distance for 2D relative orientation histogram
             3: bin positions ("Y") for relative orientation for 2D relative orientation histogram
 
@@ -1433,7 +1557,7 @@ def make_relative_orientation_plots(datasets, exptName = '',
     titleStr = f'{exptName}: Relative Orientation'
     # Save the output 2D histograms, for use later.
     # use heatmap as plot type; for 2D histogram slicing along Y is not helpful
-    relOrient_2Dhist_mean, X, Y, relOrient_2Dhist_std = make_2D_histogram(
+    relOrient_2Dhist_mean, X, Y, relOrient_2Dhist_sem, _ = make_2D_histogram(
         datasets, 
         keyNames = ('relative_orientation', distanceKey), 
         keyIdx = (None, None), 
@@ -1454,7 +1578,7 @@ def make_relative_orientation_plots(datasets, exptName = '',
         closeFigure = closeFigures)
 
     saved_pair_outputs.append(relOrient_2Dhist_mean)
-    saved_pair_outputs.append(relOrient_2Dhist_std)
+    saved_pair_outputs.append(relOrient_2Dhist_sem)
     saved_pair_outputs.append(X)
     saved_pair_outputs.append(Y)
 
@@ -1473,7 +1597,7 @@ def make_relative_orientation_plots(datasets, exptName = '',
         xlim = (-np.pi, np.pi)
         zlim = (0.0, 0.02)
         color = color
-        slice_2D_histogram(relOrient_2Dhist_mean, X, Y, relOrient_2Dhist_std, 
+        slice_2D_histogram(relOrient_2Dhist_mean, X, Y, relOrient_2Dhist_sem, 
                         slice_axis = 'x', other_range = d_range, 
                         titleStr = titleStr, xlabelStr = xlabelStr, 
                         zlabelStr = zlabelStr,
@@ -1498,7 +1622,7 @@ def make_relative_orientation_plots(datasets, exptName = '',
         xlim = (-np.pi, np.pi)
         zlim = (0.0, 0.02)
         color = color
-        slice_2D_histogram(relOrient_2Dhist_mean, X, Y, relOrient_2Dhist_std, 
+        slice_2D_histogram(relOrient_2Dhist_mean, X, Y, relOrient_2Dhist_sem, 
                         slice_axis = 'x', other_range = d_range, 
                         titleStr = titleStr, xlabelStr = xlabelStr, 
                         zlabelStr = zlabelStr,
@@ -1675,7 +1799,142 @@ def make_single_fish_plots(datasets, exptName = '', color = 'black',
                           outputCSVFileName=outputCSVFileName)
 
 
-def make_2D_histogram(datasets, 
+def bin_and_plot_2D(values1_all, values2_all, valuesC_all=None,
+                    bin_ranges=None, Nbins=(20, 20),
+                    titleStr=None, clabelStr=None,
+                    xlabelStr='x', ylabelStr='y',
+                    colorRange=None,
+                    unit_scaling_for_plot=[1.0, 1.0, 1.0],
+                    mask_by_sem_limit=None,
+                    cmap='RdYlBu',
+                    plot_type='heatmap',
+                    outputFileName=None,
+                    outputCSVFileName=None,
+                    closeFigure=False):
+    """
+    Bin pre-pooled 1D value arrays into a 2D histogram, optionally write the
+    result to CSV, and plot it (heatmap or line plots).
+
+    This is the binning/plotting back-end shared by make_2D_histogram() (which
+    builds the inputs from per-frame dataset keys) and by callers that already
+    have pooled 1D arrays, e.g. per-IBI properties
+    (make_interbout_turning_angle_plots()).
+
+    If valuesC_all is None, computes a normalized occurrence histogram of
+    (values1, values2). Otherwise computes the mean of valuesC in each
+    (value1, value2) bin, plus its standard deviation and s.e.m.
+
+    Parameters
+    ----------
+    values1_all, values2_all : 1D arrays of equal length (the two binning axes)
+    valuesC_all : 1D array of the same length, or None. The quantity to average
+                  in each bin; None for an occurrence histogram.
+    bin_ranges : ((v1_min, v1_max), (v2_min, v2_max)) or None (auto from data)
+    Nbins : (n_bins_axis1, n_bins_axis2)
+    titleStr, clabelStr, xlabelStr, ylabelStr : plot labels
+    colorRange : (vmin, vmax) or None
+    unit_scaling_for_plot : [x, y, C] display scaling (e.g. radians->degrees)
+    mask_by_sem_limit : float or None; mask bins whose s.e.m. exceeds this
+    cmap : colormap name
+    plot_type : 'heatmap' or 'line_plots'
+    outputFileName : figure filename, or None
+    outputCSVFileName : if not None, write the mean to this CSV (X as row index,
+                        Y as columns) and the s.e.m. to a parallel '_unc' file
+    closeFigure : if True, close the figure after creating it
+
+    Returns
+    -------
+    hist : 2D array (occurrence histogram, or mean of valuesC per bin)
+    X, Y : 2D meshgrid arrays of bin-center coordinates
+    hist_sem : 2D array, s.e.m. per bin (None if valuesC_all is None)
+    hist_std : 2D array, std dev per bin (None if valuesC_all is None)
+    """
+    # Determine the bin ranges
+    if bin_ranges is None:
+        value1_min, value1_max = np.nanmin(values1_all), np.nanmax(values1_all)
+        value2_min, value2_max = np.nanmin(values2_all), np.nanmax(values2_all)
+        # Expand a bit!
+        d1 = (value1_max - value1_min)/Nbins[0]
+        d2 = (value2_max - value2_min)/Nbins[1]
+        value1_min = value1_min - d1/2.0
+        value1_max = value1_max + d1/2.0
+        value2_min = value2_min - d2/2.0
+        value2_max = value2_max + d2/2.0
+    else:
+        value1_min, value1_max = bin_ranges[0]
+        value2_min, value2_max = bin_ranges[1]
+
+    if valuesC_all is None:
+        # normalized occurrence histogram
+        hist, xedges, yedges = np.histogram2d(values1_all, values2_all,
+                                              bins=Nbins,
+                                              range=[(value1_min, value1_max),
+                                                     (value2_min, value2_max)])
+        hist = hist / hist.sum()
+        if clabelStr is None:
+            clabelStr = 'Normalized Count'
+        hist_std = None
+        hist_sem = None
+    else:
+        # mean (and std, count -> s.e.m.) of valuesC in each bin
+        hist, xedges, yedges, _ = binned_statistic_2d(
+            values1_all, values2_all, valuesC_all,
+            statistic='mean', bins=Nbins,
+            range=[(value1_min, value1_max), (value2_min, value2_max)])
+        hist_std, _, _, _ = binned_statistic_2d(
+            values1_all, values2_all, valuesC_all,
+            statistic='std', bins=Nbins,
+            range=[(value1_min, value1_max), (value2_min, value2_max)])
+        hist_count, _, _, _ = binned_statistic_2d(
+            values1_all, values2_all, valuesC_all,
+            statistic='count', bins=Nbins,
+            range=[(value1_min, value1_max), (value2_min, value2_max)])
+        hist_sem = hist_std / np.sqrt(hist_count)
+        if clabelStr is None:
+            clabelStr = 'Mean value'
+
+    # X and Y bin-center meshgrid
+    X, Y = np.meshgrid(0.5*(xedges[1:] + xedges[:-1]),
+                       0.5*(yedges[1:] + yedges[:-1]), indexing='ij')
+
+    if outputCSVFileName is not None:
+        x_vals = X[:, 0]
+        y_vals = Y[0, :]
+        pd.DataFrame(hist, index=x_vals, columns=y_vals).to_csv(outputCSVFileName)
+        if hist_sem is not None:
+            base, ext = os.path.splitext(outputCSVFileName)
+            pd.DataFrame(hist_sem, index=x_vals, columns=y_vals).to_csv(
+                base + '_unc' + ext)
+
+    if titleStr is None:
+        titleStr = '2D histogram'
+
+    # Choose plotting function based on plot_type
+    # For line_plots, ignore the colorRange
+    if plot_type.lower() == 'line_plots':
+        plot_2Darray_linePlots(hist, X, Y, Z_unc=hist_sem,
+                              titleStr=titleStr,
+                              xlabelStr=xlabelStr, ylabelStr=ylabelStr,
+                              clabelStr=clabelStr,
+                              colorRange=None, cmap=cmap,
+                              unit_scaling_for_plot=unit_scaling_for_plot,
+                              mask_by_sem_limit=mask_by_sem_limit,
+                              outputFileName=outputFileName,
+                              closeFigure=closeFigure)
+    else:  # default to heatmap
+        plot_2D_heatmap(hist, X, Y, Z_unc=hist_sem,
+                       titleStr=titleStr,
+                       xlabelStr=xlabelStr, ylabelStr=ylabelStr,
+                       clabelStr=clabelStr,
+                       colorRange=colorRange, cmap=cmap,
+                       unit_scaling_for_plot=unit_scaling_for_plot,
+                       mask_by_sem_limit=mask_by_sem_limit,
+                       outputFileName=outputFileName, closeFigure=closeFigure)
+
+    return hist, X, Y, hist_sem, hist_std
+
+
+def make_2D_histogram(datasets,
                       keyNames = ('speed_array_mm_s', 'head_head_distance_mm'), 
                       keyIdx = (None, None), 
                       use_abs_value = (False, False),
@@ -1776,6 +2035,8 @@ def make_2D_histogram(datasets,
         X, Y : 2D array of X, Y values from meshgrid
         hist_sem : 2D array, std error of the mean in each bin if keyNameC
                    is used; else None
+        hist_std : 2D array, std deviation in each bin if keyNameC
+                   is used; else None
     """
     if len(keyNames) != 2:
         raise ValueError("There must be two keys for the 2D histogram!") 
@@ -1868,108 +2129,31 @@ def make_2D_histogram(datasets,
     if keyNameC is not None:
         valuesC_all = np.concatenate(valuesC_all)
     
-    # Determine the bin ranges
-    if bin_ranges is None:
-        value1_min, value1_max = np.nanmin(values1_all), np.nanmax(values1_all)
-        value2_min, value2_max = np.nanmin(values2_all), np.nanmax(values2_all)
-        # Expand a bit!
-        d1 = (value1_max - value1_min)/Nbins[0]
-        d2 = (value2_max - value2_min)/Nbins[1]
-        value1_min = value1_min - d1/2.0
-        value1_max = value1_max + d1/2.0
-        value2_min = value2_min - d2/2.0
-        value2_max = value2_max + d2/2.0
-    else:
-        value1_min, value1_max = bin_ranges[0]
-        value2_min, value2_max = bin_ranges[1]
-    
-    if keyNameC is None:
-        # calculate the normalized occurrence histogram values
-        hist, xedges, yedges = np.histogram2d(values1_all, values2_all, 
-                                              bins=Nbins, 
-                                              range=[(value1_min, value1_max), 
-                                                     (value2_min, value2_max)])
-        # Normalize the histogram
-        hist = hist / hist.sum()
-        if clabelStr is None:
-            clabelStr = 'Normalized Count'
-        hist_std = None
-        hist_sem = None
-    else:
-        # plot mean of keyC in each bin
-        # Use binned_statistic_2d to compute mean
-        
-        hist, xedges, yedges, _ = binned_statistic_2d(
-            values1_all, values2_all, valuesC_all,
-            statistic='mean',
-            bins=Nbins,
-            range=[(value1_min, value1_max), (value2_min, value2_max)]
-        )
-        hist_std, _, _, _ = binned_statistic_2d(
-            values1_all, values2_all, valuesC_all,
-            statistic='std',
-            bins=Nbins,
-            range=[(value1_min, value1_max), (value2_min, value2_max)]
-        )
-        hist_count, _, _, _ = binned_statistic_2d(
-            values1_all, values2_all, valuesC_all,
-            statistic='count',
-            bins=Nbins,
-            range=[(value1_min, value1_max), (value2_min, value2_max)]
-        )
-        hist_sem = hist_std / np.sqrt(hist_count)
-        if clabelStr is None:
-            clabelStr = f'Mean {keyNameC}'
-    
-    # For the 2D histogram
-    # X and Y values
-    X, Y = np.meshgrid(0.5*(xedges[1:] + xedges[:-1]),
-                       0.5*(yedges[1:] + yedges[:-1]), indexing='ij')
-
-    if outputCSVFileName is not None:
-        x_vals = X[:, 0]
-        y_vals = Y[0, :]
-        pd.DataFrame(hist, index=x_vals, columns=y_vals).to_csv(outputCSVFileName)
-        if hist_sem is not None:
-            base, ext = os.path.splitext(outputCSVFileName)
-            pd.DataFrame(hist_sem, index=x_vals, columns=y_vals).to_csv(
-                base + '_unc' + ext)
-
+    # Resolve default labels that depend on the key names, then delegate the
+    # binning, optional CSV export, and plotting to bin_and_plot_2D().
     if xlabelStr is None:
         xlabelStr = keyNames[0]
     if ylabelStr is None:
         ylabelStr = keyNames[1]
-            
+    if clabelStr is None:
+        clabelStr = 'Normalized Count' if keyNameC is None else f'Mean {keyNameC}'
     if titleStr is None:
         if keyNameC is None:
             titleStr = f'2D Histogram of {keyNames[0]} vs {keyNames[1]}'
         else:
             titleStr = f'Mean {keyNameC} vs {keyNames[0]} and {keyNames[1]}'
 
-    # Choose plotting function based on plot_type
-    # For line_plots, ignore the colorRange 
-    if plot_type.lower() == 'line_plots':
-        plot_2Darray_linePlots(hist, X, Y, Z_unc=hist_sem,
-                              titleStr=titleStr, 
-                              xlabelStr=xlabelStr, ylabelStr=ylabelStr, 
-                              clabelStr=clabelStr,
-                              colorRange=None, cmap=cmap,
-                              unit_scaling_for_plot=unit_scaling_for_plot,
-                              mask_by_sem_limit=mask_by_sem_limit,
-                              outputFileName=outputFileName, 
-                              closeFigure=closeFigure)        
-    else:  # default to heatmap
-        plot_2D_heatmap(hist, X, Y, Z_unc=hist_sem,
-                       titleStr=titleStr, 
-                       xlabelStr=xlabelStr, ylabelStr=ylabelStr, 
-                       clabelStr=clabelStr,
-                       colorRange=colorRange, cmap=cmap,
-                       unit_scaling_for_plot=unit_scaling_for_plot,
-                       mask_by_sem_limit=mask_by_sem_limit,
-                       outputFileName=outputFileName, closeFigure=closeFigure)
-
-        
-    return hist, X, Y, hist_sem
+    return bin_and_plot_2D(values1_all, values2_all, valuesC_all=valuesC_all,
+                           bin_ranges=bin_ranges, Nbins=Nbins,
+                           titleStr=titleStr, clabelStr=clabelStr,
+                           xlabelStr=xlabelStr, ylabelStr=ylabelStr,
+                           colorRange=colorRange,
+                           unit_scaling_for_plot=unit_scaling_for_plot,
+                           mask_by_sem_limit=mask_by_sem_limit,
+                           cmap=cmap, plot_type=plot_type,
+                           outputFileName=outputFileName,
+                           outputCSVFileName=outputCSVFileName,
+                           closeFigure=closeFigure)
 
 
 def slice_2D_histogram(z_mean, X, Y, z_unc, slice_axis='x', other_range=None, 
