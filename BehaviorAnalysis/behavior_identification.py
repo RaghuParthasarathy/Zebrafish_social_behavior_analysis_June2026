@@ -25,7 +25,7 @@ from toolkit import wrap_to_pi, combine_all_values_constrained, \
     calculate_value_corr_all,  make_frames_dictionary, \
     remove_frames, combine_events, calculate_value_corr_all_binned, \
     dilate_frames, get_values_subset, repair_heading_angles
-from IO_toolkit import plot_2D_heatmap, plot_2Darray_linePlots
+from IO_toolkit import plot_2D_heatmap, plot_2Darray_linePlots, simple_write_CSV
 from behavior_identification_single import calc_bend_angle
 from scipy.stats import skew
 import itertools
@@ -186,6 +186,27 @@ def get_IBI_properties(datasets):
         "heading_angle_mean"      : circular mean heading angle (rad)
         "turning_angle_IBI"       : -wrap(heading_angle_mean[next]
                                           - heading_angle_mean[this]), in [-pi, pi]
+      Inter-bout STEP quantities (change from each output IBI to the NEXT; theta
+      is the displacement direction INTO each IBI, from the previous one).
+      Computed from the full per-IBI mean arrays, so the first/last output IBI use
+      their true neighbours; NaN where a neighbouring mean is NaN. These are read
+      (not recomputed) by get_InterBout_properties / build_radial_dHH_bin_
+      distributions in random_displacement_analysis.py.
+        "Delta_r_mm"   : r_mm_mean[next] - r_mm_mean[this] (mm) 
+                         NOTE: this is the difference in radial coordinate only,
+                               *NOT* step magnitude
+        "Delta_gamma"  : wrap(gamma_mean[next] - gamma_mean[this]), [-pi, pi]
+        "Delta_s_mm"   : |mean position[next] - mean position[this]| (mm)
+        "theta"        : direction of the displacement of the mean position INTO
+                         this IBI (from the previous IBI), rad
+        "Delta_theta"  : wrap(theta[next] - theta[this]), [-pi, pi]
+        (Empty array "turning" for trajectory-based turning angle in simulations)
+        "v_r_mm_s"     : radial velocity, based on (position[next] - position[this])/dt
+        "wall_alignment" : |sin(heading_angle_mean - gamma_mean)|, in [0, 1]. A
+                         per-IBI measure of how parallel the fish heading is to
+                         the arena wall tangent (the tangent at polar angle gamma
+                         points along gamma +/- pi/2): 1 = heading parallel to the
+                         wall, 0 = heading radial (toward/away from the wall).
       Nfish==2 only (per fish, using that fish's own IBI frames):
         "head_head_distance_mm_mean" : mean head-head distance over the IBI (mm)
         "closest_distance_mm_mean"   : mean closest distance over the IBI (mm)
@@ -227,7 +248,9 @@ def get_IBI_properties(datasets):
 
         single_keys = ["IB_duration_s", "Delta_t_s", "start_frame",
                        "r_mm_mean", "r_mm_std", "gamma_mean", "gamma_std",
-                       "heading_angle_mean", "turning_angle_IBI"]
+                       "heading_angle_mean", "turning_angle_IBI",
+                       "Delta_r_mm", "Delta_gamma", "Delta_s_mm",
+                       "theta", "Delta_theta", "v_r_mm_s", "wall_alignment"]
         pair_keys = ["head_head_distance_mm_mean", "closest_distance_mm_mean",
                      "relative_orientation_mean"]
         all_keys = single_keys + (pair_keys if twoFish else [])
@@ -303,9 +326,44 @@ def get_IBI_properties(datasets):
                 # Delta_t_s: bout duration between IBI out_idx and out_idx+1
                 delta_t = np.array(
                     [(ibis[i + 1][0] - (ibis[i][1] + 1)) / fps for i in out_idx])
+
+                # Inter-bout STEP quantities (change from each output IBI to the
+                # NEXT; theta is the displacement direction INTO each IBI, from the
+                # previous one). Computed from the FULL per-IBI mean arrays, so the
+                # first and last OUTPUT IBI use their true neighbouring IBIs.
+                # NaN where a neighbouring mean is NaN (bad-tracking IBI).
+                x_full = r_means * np.cos(gamma_means)
+                y_full = r_means * np.sin(gamma_means)
+                theta_full = np.full(N_ibis, np.nan)
+                theta_full[1:] = np.arctan2(y_full[1:] - y_full[:-1],
+                                            x_full[1:] - x_full[:-1])
+                Delta_r = r_means[out_idx + 1] - r_means[out_idx]
+                Delta_gamma = ((gamma_means[out_idx + 1] - gamma_means[out_idx]
+                                + np.pi) % (2.0 * np.pi) - np.pi)
+                Delta_s = np.hypot(x_full[out_idx + 1] - x_full[out_idx],
+                                   y_full[out_idx + 1] - y_full[out_idx])
+                theta_out = theta_full[out_idx]
+                Delta_theta = ((theta_full[out_idx + 1] - theta_full[out_idx]
+                                + np.pi) % (2.0 * np.pi) - np.pi)
+                Delta_x = x_full[out_idx + 1] - x_full[out_idx]
+                Delta_y = y_full[out_idx + 1] - y_full[out_idx]
+                v_r = (Delta_x*np.cos(gamma_means[out_idx]) +
+                       Delta_y*np.sin(gamma_means[out_idx])) / delta_t
+                # Wall alignment: |sin(heading - gamma)| in [0, 1]; 1 when the
+                # heading is parallel to the wall tangent (gamma +/- pi/2),
+                # 0 when radial. Per-IBI (no neighbour needed); sin handles wrap.
+                wall_alignment = np.abs(np.sin(heading_means[out_idx]
+                                               - gamma_means[out_idx]))
             else:
                 turning = np.array([])
                 delta_t = np.array([])
+                Delta_r = np.array([])
+                Delta_gamma = np.array([])
+                Delta_s = np.array([])
+                theta_out = np.array([])
+                Delta_theta = np.array([])
+                v_r = np.array([])
+                wall_alignment = np.array([])
 
             IBI_properties["IB_duration_s"][k] = ibi_durations_s[out_idx]
             IBI_properties["Delta_t_s"][k] = delta_t
@@ -316,6 +374,13 @@ def get_IBI_properties(datasets):
             IBI_properties["gamma_std"][k] = gamma_stds[out_idx]
             IBI_properties["heading_angle_mean"][k] = heading_means[out_idx]
             IBI_properties["turning_angle_IBI"][k] = turning
+            IBI_properties["Delta_r_mm"][k] = Delta_r
+            IBI_properties["Delta_gamma"][k] = Delta_gamma
+            IBI_properties["Delta_s_mm"][k] = Delta_s
+            IBI_properties["theta"][k] = theta_out
+            IBI_properties["Delta_theta"][k] = Delta_theta
+            IBI_properties["v_r_mm_s"][k] = v_r
+            IBI_properties["wall_alignment"][k] = wall_alignment
             if twoFish:
                 IBI_properties["head_head_distance_mm_mean"][k] = hh_means[out_idx]
                 IBI_properties["closest_distance_mm_mean"][k] = cd_means[out_idx]

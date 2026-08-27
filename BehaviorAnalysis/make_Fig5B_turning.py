@@ -30,7 +30,7 @@ Datasets and colors:
 
 Instructions:
 
-Modify the expBaseStr et., for each dataset of interest.
+Modify the expBaseStr etc., for each dataset of interest.
 
 """
 
@@ -219,8 +219,12 @@ def for_frame_by_frame_turning_angle_plots(all_expts, distance_type, comparisons
                                   makeSlicePlots=False)
 
 
-def for_interbout_turning_angle_plots(all_expts, distance_type, comparisons,
-                                      Nbins=(11, 15), cmap='berlin',
+def for_interbout_turning_angle_plots(all_expts, angle_type = 'Delta_theta', 
+                                      distance_type='head_head_distance', 
+                                      comparisons=[], Nbins=(11, 15), 
+                                      constraintKey = None,
+                                      constraintRange = (-np.inf, np.inf),
+                                      cmap='berlin',
                                       plot_type='heatmap',
                                       mask_by_sem_limit_degrees=2.0,
                                       colorRange=(-5.0*np.pi/180.0, 5.0*np.pi/180.0),
@@ -238,9 +242,35 @@ def for_interbout_turning_angle_plots(all_expts, distance_type, comparisons,
     Then makes the between-condition difference heatmaps. No slice plots are made
     for the IB turning angle.
 
-    Inputs are the same as for_frame_by_frame_turning_angle_plots(), except the
+    Inputs are the same as for_frame_by_frame_turning_angle_plots(),
+    except angle_type (which should be added there).
+    Note that the
     default Nbins is coarser because IBI data is much sparser than frame data
     (one value per IBI rather than per frame).
+
+    Inputs
+    ------
+    all_expts : dict of loaded experiment data, keyed by experiment name; each
+        entry must contain "datasets" and "plot_color".
+    angle_type : 'Delta_theta' or 'turning_angle_IBI'
+    distance_type : 'closest_distance' or 'head_head_distance'.
+    comparisons : list of (title, filename, exptKey_A, exptKey_B, slice_color)
+        tuples for the difference plots (A minus B).
+    Nbins : (n_relorient_bins, n_distance_bins) for the 2D histogram.
+    constraintKey : if not None, limit the angles to values for which this
+                    key's values are in constraintRange
+    constraintRange : tuple of (min, max) values to allow for the constraint key
+    cmap : colormap.
+    plot_type : 2D plot type for make_turning_angle_plots ('heatmap' or 'line_plots').
+    mask_by_sem_limit_degrees : only show bins whose s.e.m. is below this (degrees);
+        applied to both the per-experiment histograms and the difference plots.
+    colorRange : (vmin, vmax) color scale (radians) for the per-experiment
+        histograms. To use a different range for the difference plots, manually
+        alter the call to make_turning_difference_plots() in this function.
+    xlabelStr : x-axis label for the difference plots.
+    outputExtension : figure file extension, including the dot (e.g. '.svg').
+    closeFigures : if True, close figures after creating them.
+
     """
     if closeFigures:
         print('Inter-bout turning angle plots: closing figure windows.')
@@ -249,8 +279,11 @@ def for_interbout_turning_angle_plots(all_expts, distance_type, comparisons,
         saved_pair_turning_outputs = make_interbout_turning_angle_plots(
             all_expts[exptName]['datasets'],
             exptName=exptName,
+            angle_type = angle_type,
             distance_type=distance_type,
             Nbins=Nbins,
+            constraintKey = constraintKey,
+            constraintRange = constraintRange,
             mask_by_sem_limit_degrees=mask_by_sem_limit_degrees,
             colorRange=colorRange,
             cmap=cmap,
@@ -316,7 +349,16 @@ def main():
 
     #%% Shared inputs, used by either turning-angle function
 
+    angle_type = 'turning_angle_IBI' # 'Delta_theta' 
+                               # or 'turning_angle_IBI' (fish heading angle change)
     distance_type = 'head_head_distance'  # or 'closest_distance'
+
+    constraintKey=None
+    constraintRange = None
+    #constraintKey='Delta_s_mm'
+    # constraintRange=(2.0, np.inf)
+    if constraintRange is not None:
+        _ = input('Constraints! Press enter. ')
 
     # Each tuple: (title_label, filename_label, exptKey_A, exptKey_B, slice_color)
     comparisons = [
@@ -329,11 +371,11 @@ def main():
     plot_type = 'heatmap'
     xlabelStr = 'Relative Orientation (degrees)'
     outputExtension = '.svg'  # for saving images
-    mask_by_sem_limit_degrees = 8.0  # only show bins with s.e.m. below this (deg)
-    # Color scale (radians) for the per-experiment turning-angle histograms.
+    mask_by_sem_limit_degrees = 15.0  # only show bins with s.e.m. below this (deg)
+    # Color scale (radians) for the per-experiment turning-angle heatmaps.
     # (The between-condition difference plots use their own range, set in
     #  make_turning_difference_plots.)
-    colorRange = (-8.0*np.pi/180.0, 8.0*np.pi/180.0)
+    colorRange = (-9.0*np.pi/180.0, 9.0*np.pi/180.0)
 
     #%% Choose which turning-angle plot to make
 
@@ -342,14 +384,19 @@ def main():
     if which_turning_plot == 'frame_by_frame':
         for_frame_by_frame_turning_angle_plots(
             all_expts, distance_type, comparisons,
-            Nbins=(19, 25), cmap=cmap, plot_type=plot_type,
+            Nbins=(19, 25), constraintKey = constraintKey,
+            constraintRange = constraintRange,
+            cmap=cmap, plot_type=plot_type,
             mask_by_sem_limit_degrees=mask_by_sem_limit_degrees,
             colorRange=colorRange,
             xlabelStr=xlabelStr, outputExtension=outputExtension)
     elif which_turning_plot == 'inter_bout':
         for_interbout_turning_angle_plots(
-            all_expts, distance_type, comparisons,
-            Nbins=(11, 13), cmap=cmap, plot_type=plot_type,
+            all_expts, angle_type = angle_type, distance_type = distance_type, 
+            comparisons = comparisons, Nbins=(11, 19), 
+            constraintKey = constraintKey,
+            constraintRange = constraintRange,
+            cmap=cmap, plot_type=plot_type,
             mask_by_sem_limit_degrees=mask_by_sem_limit_degrees,
             colorRange=colorRange,
             xlabelStr=xlabelStr, outputExtension=outputExtension)

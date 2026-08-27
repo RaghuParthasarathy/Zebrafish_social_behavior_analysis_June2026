@@ -37,6 +37,7 @@ from behavior_identification import (calculate_bout_property_binned_by_distance,
                                      calculate_interfish_bout_lags)
 from behavior_identification_single import (average_bout_trajectory_allSets,
                                             average_bout_trajectory_oneSet)
+from IBI_diagnostics import phi_resolved_turn_std_vs_distance
 
 
 def plot_property_1Dbinned(binned_mean, bin_centers, binned_mean_each_dataset,
@@ -131,10 +132,12 @@ def make_pair_fish_plots(datasets, exptName = '',
                          distance_type = 'closest_distance',
                          color = 'black',
                          plot_type_2D = 'heatmap',
-                         outputFileNameBase = 'pair_fish', 
+                         outputFileNameBase = 'pair_fish',
                          outputFileNameExt = 'png',
                          closeFigures = False,
-                         writeCSVs = False):
+                         writeCSVs = False,
+                         max_bout_speed_mm_s = 100.0,
+                         fps = None):
     """
     Makes several useful "pair" plots -- i.e. plots of characteristics 
     of pairs of fish.
@@ -142,7 +145,7 @@ def make_pair_fish_plots(datasets, exptName = '',
     function is probably more useful to read than to run, pasting and 
     modifying its code.
     Bending angle plots extracted and moved to make_bending_angle_plots()
-    
+
     Inputs:
         datasets : dictionaries for each dataset
         exptName : (string) Experiment name, to append to titles.
@@ -156,8 +159,15 @@ def make_pair_fish_plots(datasets, exptName = '',
                              won't save a figure file
         outputFileNameExt : extension for figure output (e.g. 'eps' or 'png')
         closeFigures : (bool) if True, close a figure after creating it.
-        writeCSVs : (bool) Used by various functions; if true, output plotted 
+        writeCSVs : (bool) Used by various functions; if true, output plotted
                             points to a CSV file. See code for filenames
+        max_bout_speed_mm_s : (float or None) speed cap (mm/s) for the turning-angle
+                            standard-deviation plot; bouts faster than this
+                            (tracking-error artifacts) are excluded. Default 100.0;
+                            None disables the speed cut.
+        fps : (float or None) frames per second, used by the turning-angle
+                            standard-deviation plot's bout quality-control. If None
+                            (default), taken from datasets[0]["fps"] (fallback 25.0).
 
     Outputs:
         None
@@ -385,10 +395,27 @@ def make_pair_fish_plots(datasets, exptName = '',
                           cmap = 'viridis',
                           colorRange = (0.0, 0.0075),
                           clabelStr = 'Probability',
-                          titleStr = f'{exptName}: abs(Rel. orient.) and {shortDistanceStr}', 
+                          titleStr = f'{exptName}: abs(Rel. orient.) and {shortDistanceStr}',
                           plot_type = 'heatmap',
                           outputFileName = outputFileName,
                           closeFigure = closeFigures)
+
+    # Within-condition standard deviation of the inter-bout turning angle,
+    # resolved by inter-fish distance (dHH) and relative orientation (phi).
+    # Computed internally from datasets[j]["IBI_properties"] (Nfish==2). See
+    # phi_resolved_turn_std_vs_distance() in IBI_diagnostics.py.
+    if outputFileNameBase is not None:
+        outputFileName = outputFileNameBase + '_turn_std_phi_dHH' + \
+            '.' + outputFileNameExt
+    else:
+        outputFileName = None
+    turn_std_fps = fps if fps is not None else datasets[0].get("fps", 25.0)
+    phi_resolved_turn_std_vs_distance(datasets,
+                                      fps = turn_std_fps,
+                                      max_bout_speed_mm_s = max_bout_speed_mm_s,
+                                      make_line_plots = False,
+                                      outputFileName = outputFileName,
+                                      closeFigure = closeFigures)
 
     """
     # Speed of the "other" fish vs. time for bouts
@@ -1340,10 +1367,118 @@ def make_turning_angle_plots(datasets, exptName = '', distance_type = None,
     return saved_pair_outputs
 
 
+# Per-IBI-property display info for plot_interbout_histogram: axis label and
+# whether the quantity is an angle (rad, plotted on [-pi, pi] with pi-based ticks).
+_IBI_PROPERTY_LABELS = {
+    "Delta_r_mm":        ("Δr (mm)", False),
+    "Delta_s_mm":        ("Δs (mm)", False),
+    "Delta_gamma":       ("Δγ (rad)", True),
+    "Delta_theta":       ("Δθ (rad)", True),
+    "theta":             ("θ (rad)", True),
+    "turning_angle_IBI": ("turning angle IBI (rad)", True),
+    "Delta_theta":       ("turning angle DeltaTheta(rad)", True),
+    "Delta_t_s":         ("Δt between IBIs (s)", False),
+    "IB_duration_s":     ("IBI duration (s)", False),
+    "r_mm_mean":         ("r (mm)", False),
+    "gamma_mean":        ("γ (rad)", True),
+}
+
+
+def plot_interbout_histogram(datasets, key, ax=None, bins=None, yscale='log',
+                             color='steelblue', titleStr=None,
+                             outputFileName=None, closeFigure=False):
+    """
+    Plot a histogram of one inter-bout-interval (IBI) property, pooled over all
+    fish (Nfish per dataset) and all datasets.
+
+    The values are read from datasets[j]["IBI_properties"][key], which is a
+    length-Nfish list of 1D arrays (see get_IBI_properties); all fish and datasets
+    are concatenated and non-finite values dropped. Suitable keys include
+    Delta_r_mm, Delta_s_mm, Delta_gamma, Delta_theta, theta, turning_angle_IBI,
+    Delta_t_s, IB_duration_s (and the per-IBI means r_mm_mean, gamma_mean).
+
+    Designed to be composable: pass an existing Axes (ax) to draw into a subplot
+    grid (e.g. from plot_interbout_histograms), or leave ax=None to make a
+    standalone single-panel figure.
+
+    Inputs
+    ------
+    datasets : list of dataset dicts, each with an "IBI_properties" key.
+    key : str, the IBI_properties sub-key to histogram.
+    ax : matplotlib Axes or None. If None, a new figure/axes is created and (when
+         outputFileName is given) saved; if provided, the histogram is drawn into
+         it and no figure-level actions (save/show/close) are taken.
+    bins : passed to plt.hist; if None, a sensible default is chosen (37 bins on
+           [-pi, pi] for angular keys, else 50 bins).
+    yscale : 'log' (default) or 'linear'.
+    color : bar color.
+    titleStr : title; if None, "<label>\\nmean=..,  std=.." is used.
+    outputFileName : if not None and ax is None, save the standalone figure here.
+    closeFigure : if True and ax is None, close the figure after creating it.
+
+    Returns
+    -------
+    good : 1D numpy array of the pooled finite values.
+    mean_v, std_v : float, mean and std of `good` (NaN if empty).
+    """
+    label, is_angular = _IBI_PROPERTY_LABELS.get(key, (key, False))
+
+    vals = []
+    for j, ds in enumerate(datasets):
+        if "IBI_properties" not in ds:
+            raise KeyError(f'"IBI_properties" missing from dataset {j}.')
+        ibi = ds["IBI_properties"]
+        if key not in ibi:
+            raise KeyError(
+                f'"{key}" is not an IBI_properties sub-key in dataset {j}. '
+                f'Available: {sorted(ibi.keys())}.')
+        for k in range(ds["Nfish"]):
+            vals.append(np.asarray(ibi[key][k], dtype=float).ravel())
+    pooled = np.concatenate(vals) if vals else np.array([])
+    good = pooled[np.isfinite(pooled)]
+
+    mean_v = float(np.mean(good)) if good.size else float('nan')
+    std_v = float(np.std(good)) if good.size else float('nan')
+
+    if bins is None:
+        bins = np.linspace(-np.pi, np.pi, 37) if is_angular else 50
+
+    standalone = ax is None
+    if standalone:
+        fig, ax = plt.subplots(figsize=(5, 4))
+    else:
+        fig = ax.figure
+
+    if good.size:
+        ax.hist(good, bins=bins, color=color, edgecolor='white', linewidth=0.5)
+    ax.set_yscale(yscale)
+    ax.set_xlabel(label, fontsize=12)
+    ax.set_ylabel('Count', fontsize=12)
+    if titleStr is None:
+        titleStr = f'{label}\nmean={mean_v:.3f},  std={std_v:.3f}'
+    ax.set_title(titleStr, fontsize=11)
+    if is_angular:
+        ax.set_xticks([-np.pi, -np.pi/2, 0, np.pi/2, np.pi])
+        ax.set_xticklabels(['-π', '-π/2', '0', 'π/2', 'π'])
+
+    if standalone:
+        fig.tight_layout()
+        if outputFileName is not None:
+            fig.savefig(outputFileName, dpi=130)
+        plt.show(block=False)
+        if closeFigure:
+            plt.close(fig)
+
+    return good, mean_v, std_v
+
+
 def make_interbout_turning_angle_plots(datasets, exptName = '',
+                                       angle_type = 'Delta_theta',
                                        distance_type = 'head_head_distance',
                                        plot_type_2D = 'heatmap',
                                        Nbins = (19, 15),
+                                       constraintKey = None,
+                                       constraintRange = (-np.inf, np.inf),
                                        mask_by_sem_limit_degrees = 2.0,
                                        colorRange = (-5.0*np.pi/180.0, 5.0*np.pi/180.0),
                                        cmap = 'RdYlBu_r',
@@ -1355,11 +1490,16 @@ def make_interbout_turning_angle_plots(datasets, exptName = '',
     Inter-bout-interval (IBI) analogue of make_turning_angle_plots().
 
     Plots the mean IBI-to-IBI turning angle (datasets[j]["IBI_properties"]
-    ["turning_angle_IBI"]) binned by the IBI-level relative orientation and
-    inter-fish distance. Pools the per-IBI arrays across fish and datasets, then
-    bins/plots them via bin_and_plot_2D(). Requires Nfish==2 (uses the pair
-    sub-keys of IBI_properties). Non-finite IBI entries are dropped before
-    binning.
+    [angle_type], where angle_type is 'Delta_theta' or 'turning_angle_IBI')
+    binned by the IBI-level relative orientation and inter-fish distance.
+    'Delta_theta' (displacement-direction change) is negated so the pooled
+    quantity follows the heading-turn sign convention; 'turning_angle_IBI'
+    (already a heading change) is used as-is. Pools the per-IBI arrays across
+    fish and datasets, then bins/plots them via bin_and_plot_2D(). Requires
+    Nfish==2 (uses the pair sub-keys of IBI_properties). Non-finite IBI entries
+    are dropped before binning. An optional constraint (constraintKey /
+    constraintRange) restricts the pooled IBIs, e.g. constraintKey='Delta_s_mm',
+    constraintRange=(1.0, np.inf) to use only steps of at least 1 mm.
 
     Inputs
     ------
@@ -1368,9 +1508,13 @@ def make_interbout_turning_angle_plots(datasets, exptName = '',
                "turning_angle_IBI", "relative_orientation_mean", and
                "head_head_distance_mm_mean" / "closest_distance_mm_mean".
     exptName : experiment name, appended to titles
+    angle_type : 'Delta_theta' or 'turning_angle_IBI'
     distance_type : 'head_head_distance' or 'closest_distance'
     plot_type_2D : 'heatmap' or 'line_plots'
     Nbins : (n_relorient_bins, n_distance_bins)
+    constraintKey : if not None, limit the angles to values for which this
+                    key's values are in constraintRange
+    constraintRange : tuple of (min, max) values to allow for the constraint key
     mask_by_sem_limit_degrees : only plot bins whose s.e.m. is below this value
                         (degrees); also used in the title. 2.0 by default.
     colorRange : (vmin, vmax) tuple for the heatmap color scale, in radians
@@ -1385,7 +1529,8 @@ def make_interbout_turning_angle_plots(datasets, exptName = '',
     Outputs
     -------
     saved_pair_outputs : list, containing (matching make_turning_angle_plots)
-        0 : turn_2Dhist_mean, mean IBI 2D turning-angle histogram
+        0 : turn_2Dhist_mean, mean IBI turning-angle histogram (2D,
+            n_relorient x n_distance)
         1 : turn_2Dhist_sem, standard error of the mean in each bin
         2 : turn_2Dhist_std, standard deviation in each bin
         3 : X, bin-center positions for relative orientation (meshgrid)
@@ -1407,19 +1552,42 @@ def make_interbout_turning_angle_plots(datasets, exptName = '',
         raise ValueError('Invalid distance type')
     distance_key = f'{distance_type}_mm_mean'
 
-    # Pool the per-IBI arrays across fish and datasets into flat 1D arrays
+    # Pool the per-IBI arrays across fish and datasets into flat 1D arrays.
+    # 'Delta_theta' is the displacement-direction change; it must be negated to
+    # match the heading-turn sign convention (turning_angle_IBI = -Delta_theta-
+    # like). 'turning_angle_IBI' is already a heading change, so it is not negated.
+    if angle_type == 'Delta_theta':
+        angle_sign = -1.0
+    elif angle_type == 'turning_angle_IBI':
+        angle_sign = 1.0
+    else:
+        raise ValueError("angle_type must be 'Delta_theta' or "
+                         "'turning_angle_IBI'")
     turning_all = []
     rel_orient_all = []
     distance_all = []
     for dataset in datasets:
         ibi = dataset["IBI_properties"]
         for k in range(dataset["Nfish"]):
-            turning_all.append(ibi["turning_angle_IBI"][k])
+            turning_all.append(angle_sign*ibi[angle_type][k])
             rel_orient_all.append(ibi["relative_orientation_mean"][k])
             distance_all.append(ibi[distance_key][k])
     turning_all = np.concatenate(turning_all)
     rel_orient_all = np.concatenate(rel_orient_all)
     distance_all = np.concatenate(distance_all)
+
+    if constraintKey is not None:
+        constraint_all = []
+        for dataset in datasets:
+            ibi = dataset["IBI_properties"]
+            for k in range(dataset["Nfish"]):
+                constraint_all.append(ibi[constraintKey][k])
+        constraint_all = np.concatenate(constraint_all)
+        keepVals = ((constraint_all >= constraintRange[0]) &
+                    (constraint_all <= constraintRange[1]))
+        turning_all = turning_all[keepVals]
+        rel_orient_all = rel_orient_all[keepVals]
+        distance_all = distance_all[keepVals]
 
     # Drop any non-finite entries (e.g. an IBI with no good frames)
     finite = (np.isfinite(turning_all) & np.isfinite(rel_orient_all)
@@ -1437,21 +1605,26 @@ def make_interbout_turning_angle_plots(datasets, exptName = '',
         outputFileName = None
     titleStr = f'{exptName}: IBI Turn Angle; unc. < {mask_by_sem_limit_degrees:.1f} deg'
 
-    turn_2Dhist_mean, X, Y, turn_2Dhist_sem, turn_2Dhist_std = bin_and_plot_2D(
-        rel_orient_all, distance_all, valuesC_all=turning_all,
+    common_bin_kwargs = dict(
         bin_ranges=((-np.pi, np.pi), (0.0, 50.0)), Nbins=Nbins,
-        titleStr=titleStr,
         clabelStr='Mean IBI Turning Angle (degrees)',
         xlabelStr='Relative Orientation (degrees)',
         ylabelStr=distanceLabelStr,
         colorRange=colorRange,
         unit_scaling_for_plot=[180.0/np.pi, 1.0, 180.0/np.pi],
         mask_by_sem_limit=mask_by_sem_limit_degrees*np.pi/180.0,
+        circular_statistic=True,
         cmap=cmap,
-        plot_type=plot_type_2D,
+        plot_type=plot_type_2D)
+
+    # 2D binning (rel. orientation, distance).
+    turn_2Dhist_mean, X, Y, turn_2Dhist_sem, turn_2Dhist_std = bin_and_plot_2D(
+        rel_orient_all, distance_all, valuesC_all=turning_all,
+        titleStr=titleStr,
         outputFileName=outputFileName,
         outputCSVFileName=outputCSVFileName,
-        closeFigure=closeFigures)
+        closeFigure=closeFigures,
+        **common_bin_kwargs)
 
     saved_pair_outputs = [turn_2Dhist_mean, turn_2Dhist_sem, turn_2Dhist_std,
                           X, Y]
@@ -1806,11 +1979,13 @@ def bin_and_plot_2D(values1_all, values2_all, valuesC_all=None,
                     colorRange=None,
                     unit_scaling_for_plot=[1.0, 1.0, 1.0],
                     mask_by_sem_limit=None,
+                    circular_statistic=False,
                     cmap='RdYlBu',
                     plot_type='heatmap',
                     outputFileName=None,
                     outputCSVFileName=None,
-                    closeFigure=False):
+                    closeFigure=False,
+                    make_plot=True):
     """
     Bin pre-pooled 1D value arrays into a 2D histogram, optionally write the
     result to CSV, and plot it (heatmap or line plots).
@@ -1835,6 +2010,12 @@ def bin_and_plot_2D(values1_all, values2_all, valuesC_all=None,
     colorRange : (vmin, vmax) or None
     unit_scaling_for_plot : [x, y, C] display scaling (e.g. radians->degrees)
     mask_by_sem_limit : float or None; mask bins whose s.e.m. exceeds this
+    circular_statistic : bool; if True, valuesC is treated as an angle (radians)
+                  and each bin's mean/std are CIRCULAR statistics (bin sin and
+                  cos separately, then combine, as in _circular_mean_std). Use
+                  for angular quantities such as turning angle, where a plain
+                  arithmetic mean underestimates the mean-angle magnitude. Has
+                  no effect when valuesC_all is None.
     cmap : colormap name
     plot_type : 'heatmap' or 'line_plots'
     outputFileName : figure filename, or None
@@ -1877,18 +2058,35 @@ def bin_and_plot_2D(values1_all, values2_all, valuesC_all=None,
         hist_sem = None
     else:
         # mean (and std, count -> s.e.m.) of valuesC in each bin
-        hist, xedges, yedges, _ = binned_statistic_2d(
+        rng_arg = [(value1_min, value1_max), (value2_min, value2_max)]
+        # Per-bin count is needed for the s.e.m. in both branches.
+        hist_count, xedges, yedges, _ = binned_statistic_2d(
             values1_all, values2_all, valuesC_all,
-            statistic='mean', bins=Nbins,
-            range=[(value1_min, value1_max), (value2_min, value2_max)])
-        hist_std, _, _, _ = binned_statistic_2d(
-            values1_all, values2_all, valuesC_all,
-            statistic='std', bins=Nbins,
-            range=[(value1_min, value1_max), (value2_min, value2_max)])
-        hist_count, _, _, _ = binned_statistic_2d(
-            values1_all, values2_all, valuesC_all,
-            statistic='count', bins=Nbins,
-            range=[(value1_min, value1_max), (value2_min, value2_max)])
+            statistic='count', bins=Nbins, range=rng_arg)
+        if circular_statistic:
+            # Circular mean / std of an angular valuesC (radians): bin sin and
+            # cos separately, combine as in _circular_mean_std(). A plain
+            # arithmetic mean underestimates the mean-angle magnitude for broad
+            # distributions (mass near +/-pi cancels toward zero).
+            sin_mean, _, _, _ = binned_statistic_2d(
+                values1_all, values2_all, np.sin(valuesC_all),
+                statistic='mean', bins=Nbins, range=rng_arg)
+            cos_mean, _, _, _ = binned_statistic_2d(
+                values1_all, values2_all, np.cos(valuesC_all),
+                statistic='mean', bins=Nbins, range=rng_arg)
+            hist = np.arctan2(sin_mean, cos_mean)
+            R = np.sqrt(sin_mean**2 + cos_mean**2)
+            # max(., 0) so a fully-concentrated bin (R == 1, e.g. a single sample)
+            # yields +0.0, not the -0.0 that -2*log(1) produces -- a negative zero
+            # is finite but is rejected as "scale < 0" by np.random.Generator.normal.
+            hist_std = np.sqrt(np.maximum(-2.0 * np.log(np.clip(R, 1e-12, 1.0)), 0.0))
+        else:
+            hist, _, _, _ = binned_statistic_2d(
+                values1_all, values2_all, valuesC_all,
+                statistic='mean', bins=Nbins, range=rng_arg)
+            hist_std, _, _, _ = binned_statistic_2d(
+                values1_all, values2_all, valuesC_all,
+                statistic='std', bins=Nbins, range=rng_arg)
         hist_sem = hist_std / np.sqrt(hist_count)
         if clabelStr is None:
             clabelStr = 'Mean value'
@@ -1910,26 +2108,30 @@ def bin_and_plot_2D(values1_all, values2_all, valuesC_all=None,
         titleStr = '2D histogram'
 
     # Choose plotting function based on plot_type
-    # For line_plots, ignore the colorRange
-    if plot_type.lower() == 'line_plots':
-        plot_2Darray_linePlots(hist, X, Y, Z_unc=hist_sem,
-                              titleStr=titleStr,
-                              xlabelStr=xlabelStr, ylabelStr=ylabelStr,
-                              clabelStr=clabelStr,
-                              colorRange=None, cmap=cmap,
-                              unit_scaling_for_plot=unit_scaling_for_plot,
-                              mask_by_sem_limit=mask_by_sem_limit,
-                              outputFileName=outputFileName,
-                              closeFigure=closeFigure)
-    else:  # default to heatmap
-        plot_2D_heatmap(hist, X, Y, Z_unc=hist_sem,
-                       titleStr=titleStr,
-                       xlabelStr=xlabelStr, ylabelStr=ylabelStr,
-                       clabelStr=clabelStr,
-                       colorRange=colorRange, cmap=cmap,
-                       unit_scaling_for_plot=unit_scaling_for_plot,
-                       mask_by_sem_limit=mask_by_sem_limit,
-                       outputFileName=outputFileName, closeFigure=closeFigure)
+    # For line_plots, ignore the colorRange.
+    # make_plot=False skips plotting entirely (compute-only); used e.g. by the
+    # 3D delta_s slice loop in make_interbout_turning_angle_plots, which calls
+    # this once per delta_s slice and only needs the returned binned arrays.
+    if make_plot:
+        if plot_type.lower() == 'line_plots':
+            plot_2Darray_linePlots(hist, X, Y, Z_unc=hist_sem,
+                                  titleStr=titleStr,
+                                  xlabelStr=xlabelStr, ylabelStr=ylabelStr,
+                                  clabelStr=clabelStr,
+                                  colorRange=None, cmap=cmap,
+                                  unit_scaling_for_plot=unit_scaling_for_plot,
+                                  mask_by_sem_limit=mask_by_sem_limit,
+                                  outputFileName=outputFileName,
+                                  closeFigure=closeFigure)
+        else:  # default to heatmap
+            plot_2D_heatmap(hist, X, Y, Z_unc=hist_sem,
+                           titleStr=titleStr,
+                           xlabelStr=xlabelStr, ylabelStr=ylabelStr,
+                           clabelStr=clabelStr,
+                           colorRange=colorRange, cmap=cmap,
+                           unit_scaling_for_plot=unit_scaling_for_plot,
+                           mask_by_sem_limit=mask_by_sem_limit,
+                           outputFileName=outputFileName, closeFigure=closeFigure)
 
     return hist, X, Y, hist_sem, hist_std
 
