@@ -741,3 +741,44 @@ def _density_and_sem(arrays, edges):
     else:
         sem = None
     return pooled_density, sem
+
+
+def _sigma_approach(x, s_far, s_0, lam):
+    """Exponential approach-to-asymptote sigma(dHH) = s_far + (s_0 - s_far)*exp(-x/lam)
+    used to read off the far-field (neighbour-absent) turn std s_far."""
+    return s_far + (s_0 - s_far)*np.exp(-np.asarray(x, dtype=float)/lam)
+
+
+def _fit_sigma_asymptote(dHH_centers, sigma, N_marg, d_far_plateau=20.0):
+    """Fit the phi-marginal within-condition turn std sigma(dHH) to
+    _sigma_approach, weighted by 1/sqrt(N), and return (sigma_far, popt) with
+    popt = [s_far, s_0, lambda] (or None if the fit failed). The marginal is high-
+    count so s_far is low-variance. Falls back to the count-weighted plateau mean over
+    dHH >= d_far_plateau, then the last finite value."""
+    dHH_centers = np.asarray(dHH_centers, dtype=float)
+    sigma = np.asarray(sigma, dtype=float)
+    N_marg = np.asarray(N_marg)
+    mfit = np.isfinite(sigma) & (N_marg > 0)
+    sigma_far = np.nan; popt = None
+    if int(np.sum(mfit)) >= 3:
+        try:
+            from scipy.optimize import curve_fit
+            _x = dHH_centers[mfit]; _y = sigma[mfit]
+            _w = 1.0/np.sqrt(np.maximum(N_marg[mfit], 1))
+            popt, _ = curve_fit(
+                _sigma_approach, _x, _y,
+                p0=[float(np.min(_y)), float(np.max(_y)), 5.0],
+                sigma=_w, absolute_sigma=False, maxfev=20000,
+                bounds=([0.0, 0.0, 0.5], [np.pi, np.pi, 100.0]))
+            sigma_far = float(popt[0])
+        except Exception:
+            popt = None
+    if not np.isfinite(sigma_far):
+        pl = mfit & (dHH_centers >= d_far_plateau)
+        if np.any(pl):
+            sigma_far = float(np.average(sigma[pl], weights=N_marg[pl]))
+        elif np.any(mfit):
+            sigma_far = float(sigma[mfit][-1])
+    return sigma_far, popt
+
+
